@@ -8,7 +8,7 @@ import time
 
 # colour ranges for feeding to the inRange funtions 
 blue_range = np.array([[88,78,20],[128,255,255]])
-yellow_range = np.array([[21,125,94],[61,255,255]])
+yellow_range = np.array([[21,70,80],[61,255,255]])
 red_range = np.array([[158,85,72],[180 ,255,255]])
 
 # Prior initialization of all centers for safety
@@ -16,18 +16,19 @@ b_cen, y_pos, r_cen = [240,320],[240,320],[240,320]
 cursor = [960,540]
 
 # Area ranges for contours of different colours to be detected
-r_area = [00,1700]
-b_area = [00,1700]
-y_area = [00,17000]
+r_area = [100,1700]
+b_area = [100,1700]
+y_area = [100,1700]
 
 # Rectangular kernal for eroding and dilating the mask for primary noise removal 
 kernel = np.ones((7,7),np.uint8)
 
+actionHistory = np.array(['       ' for i in range(7)])
+
 # Status variables defined globally
 perform = False
 showCentroid = False
-
-
+leftHand = False 
 
 # 'nothing' function is useful when creating trackbars
 # It is passed as last arguement in the cv2.createTrackbar() function
@@ -46,10 +47,28 @@ def distance( c1, c2):
 	distance = pow( pow(c1[0]-c2[0],2) + pow(c1[1]-c2[1],2) , 0.5)
 	return distance
 
+def makeActionHistory( preHistory, latestAction):
+	l = len(preHistory)
+	newHistory = np.array(['       ' for i in range(l)])
+	for i in range(l-1):
+		newHistory[i] = preHistory[i+1]
+	
+	newHistory[l-1] = latestAction
+	#print 'entered'
+	return newHistory	
+
+def checkActionHistory( actionHistory, action):
+	for i in range(len(actionHistory)):
+		if actionHistory[i] == action:
+			return False	
+	
+	return True
+
 # To toggle status of control variables
 def changeStatus(key):
 	global perform
 	global showCentroid
+	global leftHand
 	global yellow_range,red_range,blue_range
 	# toggle mouse simulation
 	if key == ord('p'):
@@ -77,6 +96,13 @@ def changeStatus(key):
 		yellow_range = calibrateColor('Yellow', yellow_range)
 		red_range = calibrateColor('Red', red_range)
 		blue_range = calibrateColor('Blue', blue_range)			
+
+	elif key == ord('l'):
+		leftHand = not leftHand
+		if leftHand:
+			print 'Left-handed mode initiated...'
+		else:
+			print 'Right-handed mode initiated...'		
 	
 	else:
 		pass
@@ -138,9 +164,9 @@ def calibrateColor(color, def_range):
 	global kernel
 	name = 'Calibrate '+ color
 	cv2.namedWindow(name)
-	cv2.createTrackbar('Hue', name, 0, 180, nothing)
-	cv2.createTrackbar('Sat', name, 0, 255, nothing)
-	cv2.createTrackbar('Val', name, 0, 255, nothing)
+	cv2.createTrackbar('Hue', name, def_range[0][0]+20, 180, nothing)
+	cv2.createTrackbar('Sat', name, def_range[0][1]   , 255, nothing)
+	cv2.createTrackbar('Val', name, def_range[0][2]   , 255, nothing)
 	while(1):
 		ret , frameinv = cap.read()
 		frame=cv2.flip(frameinv ,1)
@@ -188,64 +214,116 @@ def setCursorPos( yc, pyp):
 
 # Depending upon the relative positions of the three centroids, this function chooses whether 
 # the user desires free movement of cursor, left click, right click or dragging
-def chooseAction(yp, rc, bc):
+def chooseAction(yp, rc, bc, actionHistory):
 	out = np.array(['move', 'false'])
 	if rc[0]!=-1 and bc[0]!=-1:
 		
+		if not leftHand and checkActionHistory( actionHistory, 'ONOFF'):
+			if bc[0]-yp[0]>130 and bc[1]-yp[1]>170 and bc[1]-rc[1]<40:
+				out[0] = 'ONOFF'
+				return out
+		elif leftHand and checkActionHistory( actionHistory, 'ONOFF'):		
+			if yp[0]-bc[0]>130 and bc[1]-yp[1]>170 and bc[1]-rc[1]<40:
+				out[0] = 'ONOFF'
+				return out
+
 		if distance(yp,rc)<50 and distance(yp,bc)<50 and distance(rc,bc)<50 :
 			out[0] = 'drag'
 			out[1] = 'true'
-#			print 'dragging'
 			return out
 		elif distance(rc,bc)<40: 
 			out[0] = 'left'
-#			print 'left click'
 			return out
-		elif distance(yp,rc)<40:	
+		elif distance(yp,rc)<40 and checkActionHistory( actionHistory, 'right'):	
 			out[0] = 'right'
-#			print 'right click'
+			return out
+		elif distance(yp,rc)>40 and rc[1]-bc[1]>120:
+			out[0] = 'down'
+			return out	
+		elif bc[1]-rc[1]>110:
+			out[0] = 'up'
 			return out
 		else:
-#			print 'moving'
 			return out
 
 	else:
 		out[0] = -1
 		return out 		
 
-# Movement of cursor on screen, left click, right click and dragging actions are performed here  
+# Movement of cursor on screen, left click, right click,scroll up, scroll down
+# and dragging actions are performed here based on value stored in 'action'.  
 def performAction( yp, rc, bc, action, drag, perform):
-	if perform:
-	 	cursor[0] = 4*(yp[0]-110)
-		cursor[1] = 4*(yp[1]-120)
-		if action == 'move':
 
-			if yp[0]>110 and yp[0]<590 and yp[1]>120 and yp[1]<390:
-				pyautogui.moveTo(cursor[0],cursor[1])
-			elif yp[0]<110 and yp[1]>120 and yp[1]<390:
-				pyautogui.moveTo( 8 , cursor[1])
-			elif yp[0]>590 and yp[1]>120 and yp[1]<390:
-				pyautogui.moveTo(1912, cursor[1])
-			elif yp[0]>110 and yp[0]<590 and yp[1]<120:
-				pyautogui.moveTo(cursor[0] , 8)
-			elif yp[0]>110 and yp[0]<590 and yp[1]>390:
-				pyautogui.moveTo(cursor[0] , 1072)
-			elif yp[0]<110 and yp[1]<120:
-				pyautogui.moveTo(8, 8)
-			elif yp[0]<110 and yp[1]>390:
-				pyautogui.moveTo(8, 1072)
-			elif yp[0]>590 and yp[1]>390:
-				pyautogui.moveTo(1912, 1072)
+	if action == 'ONOFF':
+			perform = not perform
+			if perform:
+				print 'Mouse simulation ON...'
 			else:
-				pyautogui.moveTo(1912, 8)
+				print 'Mouse simulation OFF...'
 
+	if perform:
+		
+		if not leftHand:
+	 		cursor[0] = 4*(yp[0]-110)
+	 	else:
+	 		cursor[0] = 4*(yp[0]-50)
+		cursor[1] = 4*(yp[1]-120)
+			
+		if action == 'move':
+			if not leftHand:
+				if yp[0]>110 and yp[0]<590 and yp[1]>120 and yp[1]<390:
+					pyautogui.moveTo(cursor[0],cursor[1])
+				elif yp[0]<110 and yp[1]>120 and yp[1]<390:
+					pyautogui.moveTo( 8 , cursor[1])
+				elif yp[0]>590 and yp[1]>120 and yp[1]<390:
+					pyautogui.moveTo(1912, cursor[1])
+				elif yp[0]>110 and yp[0]<590 and yp[1]<120:
+					pyautogui.moveTo(cursor[0] , 8)
+				elif yp[0]>110 and yp[0]<590 and yp[1]>390:
+					pyautogui.moveTo(cursor[0] , 1072)
+				elif yp[0]<110 and yp[1]<120:
+					pyautogui.moveTo(8, 8)
+				elif yp[0]<110 and yp[1]>390:
+					pyautogui.moveTo(8, 1072)
+				elif yp[0]>590 and yp[1]>390:
+					pyautogui.moveTo(1912, 1072)
+				else:
+					pyautogui.moveTo(1912, 8)
+			else:
+				if yp[0]>50 and yp[0]<530 and yp[1]>120 and yp[1]<390:
+					pyautogui.moveTo(cursor[0],cursor[1])
+				elif yp[0]<50 and yp[1]>120 and yp[1]<390:
+					pyautogui.moveTo( 8 , cursor[1])
+				elif yp[0]>530 and yp[1]>120 and yp[1]<390:
+					pyautogui.moveTo(1912, cursor[1])
+				elif yp[0]>50 and yp[0]<530 and yp[1]<120:
+					pyautogui.moveTo(cursor[0] , 8)
+				elif yp[0]>50 and yp[0]<530 and yp[1]>390:
+					pyautogui.moveTo(cursor[0] , 1072)
+				elif yp[0]<50 and yp[1]<120:
+					pyautogui.moveTo(8, 8)
+				elif yp[0]<50 and yp[1]>390:
+					pyautogui.moveTo(8, 1072)
+				elif yp[0]>530 and yp[1]>390:
+					pyautogui.moveTo(1912, 1072)
+				else:
+					pyautogui.moveTo(1912, 8)
+		
 		elif action == 'left':
 			pyautogui.click(button = 'left')
 
 		elif action == 'right':
 			pyautogui.click(button = 'right')
-			time.sleep(0.3)		
-		
+			time.sleep(0.3)	
+
+		elif action == 'up':
+			pyautogui.scroll(5)
+#			time.sleep(0.3)
+
+		elif action == 'down':
+			pyautogui.scroll(-5)			
+#			time.sleep(0.3)
+
 		elif action == 'drag' and drag == 'true':
 			global y_pos
 			drag = 'false'
@@ -282,7 +360,7 @@ def performAction( yp, rc, bc, action, drag, perform):
 					break
 
 			pyautogui.mouseUp()
-				
+	return perform			
 		
 
 cap = cv2.VideoCapture(0)
@@ -296,14 +374,17 @@ print '**********************************************************************'
 yellow_range = calibrateColor('Yellow', yellow_range)
 red_range = calibrateColor('Red', red_range)
 blue_range = calibrateColor('Blue', blue_range)
+print '	Calibration Successfull...'
+
+cv2.namedWindow('Frame')
 
 print '**********************************************************************'
 print '	Press P to turn ON and OFF mouse simulation.'
+print '	Press L to turn ON and OFF left-handed user mode.'
 print '	Press C to display the centroid of various colours.'
+print '	Press R to recalibrate color ranges.'
 print '	Press ESC to exit.'
 print '**********************************************************************'
-
-cv2.namedWindow('Frame')
 
 while(1):
 
@@ -330,9 +411,12 @@ while(1):
 	if 	py_pos[0]!=-1 and y_cen[0]!=-1 and y_pos[0]!=-1:
 		y_pos = setCursorPos(y_cen, py_pos)
 
-	output = chooseAction(y_pos, r_cen, b_cen)			
+	output = chooseAction(y_pos, r_cen, b_cen, actionHistory)
+
+	actionHistory = makeActionHistory( actionHistory, output[0])
+
 	if output[0]!=-1:
-		performAction(y_pos, r_cen, b_cen, output[0], output[1], perform)	
+		perform = performAction(y_pos, r_cen, b_cen, output[0], output[1], perform)	
 	
 	cv2.imshow('Frame', frame)
 

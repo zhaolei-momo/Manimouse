@@ -8,7 +8,7 @@ import time
 
 # colour ranges for feeding to the inRange funtions 
 blue_range = np.array([[88,78,20],[128,255,255]])
-yellow_range = np.array([[21,125,94],[61,255,255]])
+yellow_range = np.array([[21,70,80],[61,255,255]])
 red_range = np.array([[158,85,72],[180 ,255,255]])
 
 # Prior initialization of all centers for safety
@@ -18,7 +18,7 @@ cursor = [960,540]
 # Area ranges for contours of different colours to be detected
 r_area = [00,1700]
 b_area = [00,1700]
-y_area = [00,17000]
+y_area = [00,1700]
 
 # Rectangular kernal for eroding and dilating the mask for primary noise removal 
 kernel = np.ones((7,7),np.uint8)
@@ -27,7 +27,7 @@ kernel = np.ones((7,7),np.uint8)
 perform = False
 showCentroid = False
 
-
+cv2.namedWindow('Frame')
 
 # 'nothing' function is useful when creating trackbars
 # It is passed as last arguement in the cv2.createTrackbar() function
@@ -138,9 +138,9 @@ def calibrateColor(color, def_range):
 	global kernel
 	name = 'Calibrate '+ color
 	cv2.namedWindow(name)
-	cv2.createTrackbar('Hue', name, 0, 180, nothing)
-	cv2.createTrackbar('Sat', name, 0, 255, nothing)
-	cv2.createTrackbar('Val', name, 0, 255, nothing)
+	cv2.createTrackbar('Hue', name, def_range[0][0]+20, 180, nothing)
+	cv2.createTrackbar('Sat', name, def_range[0][1]   , 255, nothing)
+	cv2.createTrackbar('Val', name, def_range[0][2]   , 255, nothing)
 	while(1):
 		ret , frameinv = cap.read()
 		frame=cv2.flip(frameinv ,1)
@@ -195,25 +195,28 @@ def chooseAction(yp, rc, bc):
 		if distance(yp,rc)<50 and distance(yp,bc)<50 and distance(rc,bc)<50 :
 			out[0] = 'drag'
 			out[1] = 'true'
-#			print 'dragging'
 			return out
 		elif distance(rc,bc)<40: 
 			out[0] = 'left'
-#			print 'left click'
 			return out
 		elif distance(yp,rc)<40:	
 			out[0] = 'right'
-#			print 'right click'
+			return out
+		elif distance(yp,rc)>40 and rc[1]-bc[1]>120:
+			out[0] = 'down'
+			return out	
+		elif bc[1]-rc[1]>110:
+			out[0] = 'up'
 			return out
 		else:
-#			print 'moving'
 			return out
 
 	else:
 		out[0] = -1
 		return out 		
 
-# Movement of cursor on screen, left click, right click and dragging actions are performed here  
+# Movement of cursor on screen, left click, right click,scroll up, scroll down
+# and dragging actions are performed here based on value stored in 'action'.  
 def performAction( yp, rc, bc, action, drag, perform):
 	if perform:
 	 	cursor[0] = 4*(yp[0]-110)
@@ -244,8 +247,16 @@ def performAction( yp, rc, bc, action, drag, perform):
 
 		elif action == 'right':
 			pyautogui.click(button = 'right')
-			time.sleep(0.3)		
-		
+			time.sleep(0.3)	
+
+		elif action == 'up':
+			pyautogui.scroll(5)
+#			time.sleep(0.3)
+
+		elif action == 'down':
+			pyautogui.scroll(-5)			
+#			time.sleep(0.3)
+
 		elif action == 'drag' and drag == 'true':
 			global y_pos
 			drag = 'false'
@@ -300,10 +311,9 @@ blue_range = calibrateColor('Blue', blue_range)
 print '**********************************************************************'
 print '	Press P to turn ON and OFF mouse simulation.'
 print '	Press C to display the centroid of various colours.'
+print '	Press R to recalibrate color ranges.'
 print '	Press ESC to exit.'
 print '**********************************************************************'
-
-cv2.namedWindow('Frame')
 
 while(1):
 
